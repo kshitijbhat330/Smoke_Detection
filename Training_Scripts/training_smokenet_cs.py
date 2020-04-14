@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from sklearn.metrics import cohen_kappa_score, f1_score
+from sklearn.metrics import cohen_kappa_score, f1_score, confusion_matrix, accuracy_score
 # from sklearn import metrics
 from Models.SmokeNet import SmokeNet, fit, predict
 from datetime import datetime
@@ -53,3 +53,5 @@ y_true = [testing_data[i][1].item() for i in range(len(testing_data))]
 
 print("The cohen kappa score is:", cohen_kappa_score(y_true, y_pred))
 print("The f1_score score is:", f1_score(y_true, y_pred, average="macro"))
+print("The confusion matrix is:", confusion_matrix(y_true, y_pred))
+print("The accuracy score is:", accuracy_score(y_true, y_pred))
