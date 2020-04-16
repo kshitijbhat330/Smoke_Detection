@@ -229,24 +229,24 @@ class ResidualBlock(nn.Module):
             conv1 = nn.Conv2d(in_channels, out_channels, (3, 3), stride=(2, 2), padding=(1, 1))
             shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, (1, 1), stride=(2, 2)),
-                nn.BatchNorm2d(out_channels, momentum=0.9)
+                nn.BatchNorm2d(out_channels)
             )
         else:
             conv1 = nn.Conv2d(in_channels, out_channels, (3, 3), padding=(1, 1))
             if in_channels != out_channels:
                 shortcut = nn.Sequential(
                     nn.Conv2d(in_channels, out_channels, (1, 1)),
-                    nn.BatchNorm2d(out_channels, momentum=0.9)
+                    nn.BatchNorm2d(out_channels)
                 )
             else:
                 shortcut = nn.Identity()
         self.shortcut = shortcut
         act1 = nn.ReLU()
-        norm1 = nn.BatchNorm2d(out_channels, momentum=0.9)
+        norm1 = nn.BatchNorm2d(out_channels)
         normact = nn.ReLU()
         conv2 = nn.Conv2d(out_channels, out_channels, (3, 3), padding=(1, 1))
         act2 = nn.ReLU()
-        self.norm = nn.BatchNorm2d(out_channels,momentum=0.9)
+        self.norm = nn.BatchNorm2d(out_channel)
         self.act3 = nn.ReLU()
         self.layers = nn.Sequential(
             conv1, act1, norm1, normact, conv2, act2
