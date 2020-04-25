@@ -1,22 +1,16 @@
-#------------------------------------------ Documentation ---------------------------------
-#   Author : Kshitij Bhat, Mihir Gadgil
-#------------------------------------------------------------------------------------------
-
-# %% ------------------------------------ Importing Libraries -----------------------------
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import pandas as pd
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
-
 class SmokeNet(nn.Module):
-    def __init__(self, sc_cs="SC"):
+    def __init__(self, sc_cs="SC", red_ratio=16):
         # Call weight and bias initializer
         # initialize learning rate
-        self.red_ratio = 16
+        self.red_ratio = red_ratio
 
         super(SmokeNet, self).__init__()
         # Initial size of the array 3 x 224 X 224
@@ -27,47 +21,56 @@ class SmokeNet(nn.Module):
         # First block
         block1 = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=(1, 1)),
-            nn.Dropout(0.5),
+            nn.BatchNorm2d(64),
             nn.Conv2d(64, 64, kernel_size=(3, 3), padding=(1, 1)),
-            nn.Dropout(0.5),
+            nn.BatchNorm2d(64),
             nn.Conv2d(64, 256, kernel_size=(1, 1)), # 256 X 56 X 56
-            nn.Dropout(0.5)
+            nn.BatchNorm2d(256)
         )
 
         ra1 = ResidualAttention(channels=256, height=56, width=56, n=2, red_ratio=self.red_ratio, variant=sc_cs)
 
+        pool1 = nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+
         # Second block
         block2 = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=(1, 1), stride=(2, 2)),
-            nn.Dropout(0.5),
+            # nn.Conv2d(256, 128, kernel_size=(1, 1), stride=(2, 2)),
+            nn.Conv2d(256, 128, kernel_size=(1, 1)),
+            nn.BatchNorm2d(128),
             nn.Conv2d(128, 128, kernel_size=(3, 3), padding=(1, 1)),
-            nn.Dropout(0.5),
+            nn.BatchNorm2d(128),
             nn.Conv2d(128, 512, kernel_size=(1, 1)), # 512 X 28 X 28
-            nn.Dropout(0.5)
+            nn.BatchNorm2d(512)
         )
 
         ra2 = ResidualAttention(channels=512, height=28, width=28, n=1, red_ratio=self.red_ratio, variant=sc_cs)
 
+        pool2 = nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+
         # Third block
         block3 = nn.Sequential(
-            nn.Conv2d(512, 256, kernel_size=(1, 1), stride=(2, 2)),
-            nn.Dropout(0.5),
+            # nn.Conv2d(512, 256, kernel_size=(1, 1), stride=(2, 2)),
+            nn.Conv2d(512, 256, kernel_size=(1, 1)),
+            nn.BatchNorm2d(256),
             nn.Conv2d(256, 256, kernel_size=(3, 3), padding=(1, 1)),
-            nn.Dropout(0.5),
+            nn.BatchNorm2d(256),
             nn.Conv2d(256, 1024, kernel_size=(1, 1)), # 1024 x 14 x 14
-            nn.Dropout(0.5)
+            nn.BatchNorm2d(1024)
         )
 
         ra3 = ResidualAttention(channels=1024, height=14, width=14, n=0, red_ratio=self.red_ratio, variant=sc_cs)
 
+        pool3 = nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+
         # Fourth Block
         block4 = nn.Sequential(
-            nn.Conv2d(1024, 512, kernel_size=(1, 1), stride=(2, 2)),
-            nn.Dropout(0.5),
+            # nn.Conv2d(1024, 512, kernel_size=(1, 1), stride=(2, 2)),
+            nn.Conv2d(1024, 512, kernel_size=(1, 1)),
+            nn.BatchNorm2d(512),
             nn.Conv2d(512, 512, kernel_size=(3, 3), padding=(1, 1)),
-            nn.Dropout(0.5),
+            nn.BatchNorm2d(512),
             nn.Conv2d(512, 2048, kernel_size=(1, 1)), # 2048 x 7 x 7
-            nn.Dropout(0.5)
+            nn.BatchNorm2d(2048)
         )
 
         # Final average pool 7 x 7, stride 1
@@ -79,9 +82,9 @@ class SmokeNet(nn.Module):
 
         self.layers = nn.Sequential(
             top_conv, top_act, top_pool,
-            block1, ra1,
-            block2, ra2,
-            block3, ra3,
+            block1, ra1, pool1,
+            block2, ra2, pool2,
+            block3, ra3, pool3,
             block4, last_pool,
             flat, fc
         )
@@ -90,24 +93,18 @@ class SmokeNet(nn.Module):
         return self.layers(x)
 
 
-def fit(model, optimizer, criterion, train_data, validation_data, class_weights=None, n_epochs=100, batch_size=32, filename="model"):
+def fit(model, optimizer, criterion, train_data, validation_data, class_weights=None, n_epochs=100, batch_size=32, model_suffix=""):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(42)
-    np.random.seed(42)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
     # initialize train and validation data loaders
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=torch.cuda.is_available())
     validation_loader = DataLoader(validation_data, batch_size=256, shuffle=False, num_workers=4, pin_memory=torch.cuda.is_available())
 
     # Reduce learning rate when a metric has stopped improving
-    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience= 5)
-
-    logfile = open(filename+".log","w")
-    log_df = pd.DataFrame({"Epoch":np.arange(n_epochs), "Training_Loss": np.zeros(n_epochs), "Validation_Loss":np.zeros(n_epochs)})
-
-
+    scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
+    model_file = "model_" + model_suffix + ".pt"
+    logfile = open("trainlog_" + model_suffix + ".log", "w")
+    log_df = pd.DataFrame({"Epoch": np.arange(n_epochs), "Training_Loss": np.zeros(n_epochs), "Validation_Loss": np.zeros(n_epochs)})
 
     min_validation_loss = 1e10
     print("######The device is: ", device)
@@ -141,13 +138,15 @@ def fit(model, optimizer, criterion, train_data, validation_data, class_weights=
                 min_validation_loss = validation_loss
                 print("=> Saving a new best")
                 if hasattr(model, "module"):
-                    torch.save({
-                        'model_state_dict': model.module.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict()}, "model_smokenet.pt")
+                    torch.save(
+                        {'model_state_dict': model.module.state_dict()},
+                        model_file
+                    )
                 else:
-                    torch.save({
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict()}, "model_smokenet.pt")
+                    torch.save(
+                        {'model_state_dict': model.state_dict()},
+                        model_file
+                    )
             else:
                 print("=> Validation loss did not improve")
             print("Epoch {} | Training loss {:.5f} | Validation Loss {:.5f}".format(epoch, loss_train, validation_loss))
@@ -156,7 +155,7 @@ def fit(model, optimizer, criterion, train_data, validation_data, class_weights=
             log_df.loc[epoch,"Validation_Loss"] = validation_loss
     optimizer.zero_grad()
     logfile.close()
-    log_df.to_csv(filename+".csv", index=False)
+    log_df.to_csv("traindf_" + model_suffix +".csv", index=False)
 
 
 def predict(model, test_data):
@@ -175,7 +174,7 @@ def predict(model, test_data):
 
 
 class Spatial_Attention(nn.Module):
-    def __init__(self, H=56, W=56, in_channels=128, red_ratio=16):
+    def __init__(self, H, W, in_channels, red_ratio):
         self.in_channels = in_channels
         self.H = H
         self.W = W
@@ -194,7 +193,7 @@ class Spatial_Attention(nn.Module):
 
 
 class Channel_Attention(nn.Module):
-    def __init__(self, H=56, W=56, in_channels=128, red_ratio=16):
+    def __init__(self, H, W, in_channels, red_ratio):
         self.in_channels = in_channels
         self.H = H
         self.W = W
